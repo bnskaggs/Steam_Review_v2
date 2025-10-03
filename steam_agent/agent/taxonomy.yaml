@@ -1,0 +1,6 @@
+topics:
+  combat: ["parry","combo","inputs","netcode","lag","rollback"]
+  difficulty: ["easy","hard","unfair","grind","balance"]
+  progression: ["unlock","gear","skill tree","battle pass"]
+  performance: ["fps","stutter","crash","freeze","load time"]
+  monetization: ["dlc","price","microtransaction","cosmetic","paywall"]

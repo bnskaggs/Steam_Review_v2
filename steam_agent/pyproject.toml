@@ -1,0 +1,33 @@
+[project]
+name = "steam-agent"
+version = "0.1.0"
+description = "Deterministic Steam review pipeline with agentic loop"
+requires-python = ">=3.10"
+authors = [{name = "Steam Agent"}]
+dependencies = [
+    "requests",
+    "pandas",
+    "pyarrow",
+    "duckdb",
+    "numpy",
+    "pyyaml",
+    "tqdm",
+    "rich",
+    "tenacity",
+]
+
+[project.optional-dependencies]
+postgres = ["psycopg[binary]>=3.1", "pgvector"]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["steam_agent", "steam_agent.agent", "steam_agent.pipeline"]
+
+[tool.setuptools.package-dir]
+"" = "."
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
