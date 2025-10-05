@@ -17,4 +17,9 @@ def verify_dup_rate(dup_rate: float, max_dup: float = 0.05) -> bool:
     return dup_rate <= max_dup
 
 
-__all__ = ["verify_row_growth", "verify_dup_rate"]
+def verify_topic_density(blank_pct: float, max_blank: float = 0.50) -> bool:
+    """Return True when at least half the reviews receive a topic label."""
+    return blank_pct <= max_blank
+
+
+__all__ = ["verify_row_growth", "verify_dup_rate", "verify_topic_density"]
