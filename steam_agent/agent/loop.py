@@ -39,6 +39,7 @@ class RunConfig:
     min_conf: float = 0.55
     use_pg: bool = False
     max_reviews: Optional[int] = None
+    langs: Optional[List[str]] = None
 
 
 def _existing_review_count(db_url: str) -> Optional[int]:
@@ -155,9 +156,12 @@ def run_pipeline(config: RunConfig) -> int:
         _log_summary(results)
         return 1
 
-    prepare_metrics = prepare.prepare(config.raw, config.clean)
+    prepare_metrics = prepare.prepare(config.raw, config.clean, langs=config.langs)
     _log_step("prepare", prepare_metrics, 1, True)
     results.append(("prepare", prepare_metrics))
+
+    lang_kept = float(prepare_metrics.get("pct_lang_kept", 0.0))
+    lang_counts = prepare_metrics.get("lang_counts", {})
 
     dedupe_key = "review_id|clean_text"
 
@@ -203,13 +207,24 @@ def run_pipeline(config: RunConfig) -> int:
         return 1
 
     classify_attempt = 1
+    def _update_topic_metrics(metrics: Dict[str, object]) -> float:
+        blank_pct = float(metrics.get("blank_pct", 1.0))
+        overall_topic_rate = lang_kept * (1.0 - blank_pct)
+        metrics["overall_topic_rate"] = round(overall_topic_rate, 4)
+        metrics["lang_kept"] = round(lang_kept, 4)
+        return blank_pct
+
     classify_metrics = classify.classify(
         config.embedded,
         config.topics,
         taxonomy=config.taxonomy,
         min_conf=config.min_conf,
     )
-    blank_ok = verifiers.verify_topic_density(float(classify_metrics.get("blank_pct", 1.0)))
+    blank_pct = _update_topic_metrics(classify_metrics)
+    blank_ok = verifiers.verify_topic_density(
+        blank_pct=blank_pct,
+        lang_kept=lang_kept,
+    )
     _log_step("classify", classify_metrics, classify_attempt, blank_ok)
     results.append(("classify", classify_metrics))
 
@@ -235,7 +250,11 @@ def run_pipeline(config: RunConfig) -> int:
             taxonomy=config.taxonomy,
             min_conf=config.min_conf,
         )
-        blank_ok = verifiers.verify_topic_density(float(classify_metrics.get("blank_pct", 1.0)))
+        blank_pct = _update_topic_metrics(classify_metrics)
+        blank_ok = verifiers.verify_topic_density(
+            blank_pct=blank_pct,
+            lang_kept=lang_kept,
+        )
         _log_step("classify", classify_metrics, classify_attempt, blank_ok)
         results[-1] = ("classify", classify_metrics)
 
@@ -248,7 +267,15 @@ def run_pipeline(config: RunConfig) -> int:
     _log_step("materialize", materialize_metrics, 1, True)
     results.append(("materialize", materialize_metrics))
 
-    report_metrics = report.render(config.db_url, config.report, config.since, config.until)
+    report_metrics = report.render(
+        config.db_url,
+        config.report,
+        config.since,
+        config.until,
+        lang_counts=lang_counts,
+        actual_labeled=float(classify_metrics.get("overall_topic_rate", 0.0)),
+        lang_kept=lang_kept,
+    )
     _log_step("report", report_metrics, 1, True)
     results.append(("report", report_metrics))
 
@@ -273,6 +300,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-conf", type=float, default=0.55)
     parser.add_argument("--use-pg", action="store_true")
     parser.add_argument("--max-reviews", type=int)
+    parser.add_argument("--langs", type=str, default="en", help="Comma-separated language codes")
     return parser
 
 
@@ -294,6 +322,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         min_conf=args.min_conf,
         use_pg=args.use_pg,
         max_reviews=args.max_reviews,
+        langs=[code.strip().lower() for code in args.langs.split(",") if code.strip()],
     )
     return run_pipeline(config)
 

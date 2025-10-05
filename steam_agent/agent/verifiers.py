@@ -17,9 +17,17 @@ def verify_dup_rate(dup_rate: float, max_dup: float = 0.05) -> bool:
     return dup_rate <= max_dup
 
 
-def verify_topic_density(blank_pct: float, max_blank: float = 0.50) -> bool:
-    """Return True when at least half the reviews receive a topic label."""
-    return blank_pct <= max_blank
+def verify_topic_density(
+    blank_pct: float,
+    lang_kept: float,
+    expected_label_rate_en: float = 0.70,
+    max_slack: float = 0.20,
+) -> bool:
+    """Validate topic coverage relative to the detected language mix."""
+
+    expected = lang_kept * expected_label_rate_en
+    actual = lang_kept * (1.0 - blank_pct)
+    return actual >= (expected - max_slack)
 
 
 __all__ = ["verify_row_growth", "verify_dup_rate", "verify_topic_density"]

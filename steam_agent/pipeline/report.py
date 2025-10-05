@@ -138,7 +138,16 @@ def _allocate_quotes(assignments: pd.DataFrame) -> Dict[int, Dict[str, List[Tupl
     return quote_index
 
 
-def render(db_url: str, out_md: str, since: str, until: str) -> Dict[str, object]:
+def render(
+    db_url: str,
+    out_md: str,
+    since: str,
+    until: str,
+    *,
+    lang_counts: Dict[str, int] | None = None,
+    actual_labeled: float | None = None,
+    lang_kept: float | None = None,
+) -> Dict[str, object]:
     """Render a Markdown report for the review window."""
     conn = _connect(db_url)
     try:
@@ -189,6 +198,18 @@ def render(db_url: str, out_md: str, since: str, until: str) -> Dict[str, object
         section("Top Positive Topics", pos_topics, 1)
         section("Top Negative Topics", neg_topics, -1)
 
+        lang_counts = lang_counts or {}
+        coverage_line = "Classifier coverage: n/a"
+        if actual_labeled is not None and lang_kept not in (None, 0):
+            included_share = actual_labeled / lang_kept if lang_kept else 0.0
+            coverage_line = (
+                f"Classifier coverage: {actual_labeled:.1%} of all reviews (~{included_share:.1%} of included languages)"
+            )
+
+        lines.append("---")
+        lines.append(f"Language mix this window: {lang_counts}")
+        lines.append(coverage_line)
+
         dest = Path(out_md)
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text("\n".join(lines), encoding="utf-8")
@@ -199,6 +220,9 @@ def render(db_url: str, out_md: str, since: str, until: str) -> Dict[str, object
         "path": str(out_md),
         "top_topics": [topic for topic, _ in (pos_topics + neg_topics)],
         "total_reviews": total_reviews,
+        "lang_counts": lang_counts,
+        "actual_labeled": actual_labeled,
+        "lang_kept": lang_kept,
     }
     LOGGER.info("Report rendered: %s", metrics)
     return metrics
