@@ -5,3 +5,4 @@ steam_agent/data/*.parquet
 steam_agent/data/*.csv
 steam_agent/data/*.md
 steam_agent/db/*.duckdb
+.venv/
