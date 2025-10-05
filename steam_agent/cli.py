@@ -42,6 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--embed-model", type=str, default="none")
     run_parser.add_argument("--min-conf", type=float, default=0.55)
     run_parser.add_argument("--use-pg", action="store_true")
+    run_parser.add_argument("--langs", type=str, default="en", help="Comma-separated language codes")
 
     test_parser = subparsers.add_parser("test-slice", help="Run a small validation slice")
     test_parser.add_argument("--app-id", type=int, default=1364780)
@@ -52,6 +53,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _parse_run_args(args: argparse.Namespace) -> RunConfig:
+    langs = [code.strip().lower() for code in args.langs.split(",") if code.strip()]
+
     return RunConfig(
         app_id=args.app_id,
         since=args.since,
@@ -67,6 +70,7 @@ def _parse_run_args(args: argparse.Namespace) -> RunConfig:
         embed_model=args.embed_model,
         min_conf=args.min_conf,
         use_pg=args.use_pg,
+        langs=langs,
     )
 
 
@@ -94,6 +98,7 @@ def main(argv: list[str] | None = None) -> int:
             report=defaults["report"],
             taxonomy=str(Path(__file__).resolve().parent / "agent" / "taxonomy.yaml"),
             max_reviews=args.limit,
+            langs=["en"],
         )
 
     return run_pipeline(config)
