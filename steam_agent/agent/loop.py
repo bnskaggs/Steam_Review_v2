@@ -202,14 +202,42 @@ def run_pipeline(config: RunConfig) -> int:
         _log_summary(results)
         return 1
 
+    classify_attempt = 1
     classify_metrics = classify.classify(
         config.embedded,
         config.topics,
         taxonomy=config.taxonomy,
         min_conf=config.min_conf,
     )
-    _log_step("classify", classify_metrics, 1, True)
+    blank_ok = verifiers.verify_topic_density(float(classify_metrics.get("blank_pct", 1.0)))
+    _log_step("classify", classify_metrics, classify_attempt, blank_ok)
     results.append(("classify", classify_metrics))
+
+    if not blank_ok:
+        new_min_conf = max(0.35, config.min_conf - 0.05)
+        if new_min_conf != config.min_conf:
+            LOGGER.warning(
+                "Topic density below threshold (blank_pct=%s); retrying classify with min_conf=%s",
+                classify_metrics.get("blank_pct"),
+                new_min_conf,
+            )
+        else:
+            LOGGER.warning(
+                "Topic density below threshold (blank_pct=%s); retrying classify at floor min_conf=%s",
+                classify_metrics.get("blank_pct"),
+                new_min_conf,
+            )
+        config.min_conf = new_min_conf
+        classify_attempt += 1
+        classify_metrics = classify.classify(
+            config.embedded,
+            config.topics,
+            taxonomy=config.taxonomy,
+            min_conf=config.min_conf,
+        )
+        blank_ok = verifiers.verify_topic_density(float(classify_metrics.get("blank_pct", 1.0)))
+        _log_step("classify", classify_metrics, classify_attempt, blank_ok)
+        results[-1] = ("classify", classify_metrics)
 
     materialize_metrics = materialize.load(
         config.db_url,
