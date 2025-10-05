@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -38,9 +39,9 @@ def _topic_stats(conn: duckdb.DuckDBPyConnection, since: str, until: str) -> pd.
     query = f"""
         SELECT
             t.topic,
-            SUM(CASE WHEN t.sentiment > 0 THEN 1 ELSE 0 END) AS pos_reviews,
-            SUM(CASE WHEN t.sentiment < 0 THEN 1 ELSE 0 END) AS neg_reviews,
-            COUNT(*) AS total_reviews,
+            COUNT(DISTINCT CASE WHEN t.sentiment > 0 THEN t.review_id END) AS pos_reviews,
+            COUNT(DISTINCT CASE WHEN t.sentiment < 0 THEN t.review_id END) AS neg_reviews,
+            COUNT(DISTINCT t.review_id) AS total_reviews,
             AVG(t.confidence) AS avg_conf
         FROM review_topics t
         JOIN reviews r ON r.review_id = t.review_id
@@ -72,27 +73,69 @@ def _top_topics(df: pd.DataFrame, sentiment: str, limit: int = 3) -> List[Tuple[
     else:
         column = "neg_reviews"
     filtered = df[df[column] > 0]
+    if filtered.empty:
+        return []
     sorted_df = filtered.sort_values(by=[column, "total_reviews"], ascending=[False, False])
-    return list(zip(sorted_df["topic"].head(limit), sorted_df[column].head(limit)))
+    top_rows = []
+    for _, row in sorted_df.head(limit).iterrows():
+        top_rows.append((str(row["topic"]), int(row[column])))
+    return top_rows
 
 
-def _topic_quotes(
-    conn: duckdb.DuckDBPyConnection,
-    topic: str,
-    since: str,
-    until: str,
-    limit: int = 3,
-) -> List[str]:
+def _topic_assignments(conn: duckdb.DuckDBPyConnection, since: str, until: str) -> pd.DataFrame:
     query = f"""
-        SELECT r.clean_text
+        SELECT
+            t.review_id,
+            t.topic,
+            t.sentiment,
+            t.confidence,
+            COALESCE(r.helpful, 0) AS helpful,
+            r.clean_text
         FROM review_topics t
         JOIN reviews r ON r.review_id = t.review_id
-        {_range_filter()} AND t.topic = ?
-        ORDER BY r.helpful DESC
-        LIMIT {limit}
+        {_range_filter()}
+        AND t.sentiment != 0
     """
-    rows = conn.execute(query, [since, until, topic]).fetchall()
-    return [row[0] for row in rows if row and row[0]]
+    return conn.execute(query, [since, until]).df()
+
+
+def _format_snippet(text: str, limit: int = 180) -> str:
+    snippet = re.sub(r"\s+", " ", str(text).strip())
+    if not snippet:
+        return ""
+    if len(snippet) > limit:
+        snippet = snippet[: limit - 1].rstrip() + "…"
+    return snippet
+
+
+def _allocate_quotes(assignments: pd.DataFrame) -> Dict[int, Dict[str, List[Tuple[object, str]]]]:
+    quote_index: Dict[int, Dict[str, List[Tuple[object, str]]]] = {1: defaultdict(list), -1: defaultdict(list)}
+    if assignments.empty:
+        return quote_index
+
+    assignments = assignments.dropna(subset=["clean_text"])
+    if assignments.empty:
+        return quote_index
+
+    assignments["helpful"] = assignments["helpful"].fillna(0)
+
+    for sentiment in (1, -1):
+        subset = assignments[assignments["sentiment"] == sentiment]
+        if subset.empty:
+            continue
+        subset = subset.sort_values(
+            by=["review_id", "confidence", "helpful"], ascending=[True, False, False]
+        )
+        subset = subset.drop_duplicates(subset=["review_id"], keep="first")
+        subset = subset.sort_values(by=["confidence", "helpful"], ascending=[False, False])
+
+        for _, row in subset.iterrows():
+            snippet = _format_snippet(row["clean_text"])
+            if not snippet:
+                continue
+            quote_index[sentiment][row["topic"]].append((row["review_id"], snippet))
+
+    return quote_index
 
 
 def render(db_url: str, out_md: str, since: str, until: str) -> Dict[str, object]:
@@ -101,6 +144,8 @@ def render(db_url: str, out_md: str, since: str, until: str) -> Dict[str, object
     try:
         daily = _daily_counts(conn, since, until)
         topics = _topic_stats(conn, since, until)
+        assignments = _topic_assignments(conn, since, until)
+        quote_index = _allocate_quotes(assignments)
 
         total_reviews = int(daily["review_count"].sum()) if not daily.empty else 0
         pos_topics = _top_topics(topics, "positive")
@@ -119,7 +164,7 @@ def render(db_url: str, out_md: str, since: str, until: str) -> Dict[str, object
                 lines.append(f"- {day}: {int(row['review_count'])}")
             lines.append("")
 
-        def section(title: str, items: List[Tuple[str, int]]):
+        def section(title: str, items: List[Tuple[str, int]], sentiment_value: int):
             if not items:
                 lines.append(f"## {title}")
                 lines.append("No topics matched.")
@@ -127,15 +172,22 @@ def render(db_url: str, out_md: str, since: str, until: str) -> Dict[str, object
                 return
             lines.append(f"## {title}")
             for topic, count in items:
-                lines.append(f"- **{topic}** ({count} reviews)")
-                quotes = _topic_quotes(conn, topic, since, until)
-                for quote in quotes:
-                    snippet = quote[:200].replace("\n", " ")
+                lines.append(f"- **{topic}** ({int(count)} reviews)")
+                quotes = quote_index.get(sentiment_value, {}).get(topic, [])
+                seen_reviews = set()
+                seen_snippets = set()
+                for review_id, snippet in quotes:
+                    if review_id in seen_reviews or snippet in seen_snippets:
+                        continue
                     lines.append(f"  - \"{snippet}\"")
+                    seen_reviews.add(review_id)
+                    seen_snippets.add(snippet)
+                    if len(seen_reviews) == 3:
+                        break
             lines.append("")
 
-        section("Top Positive Topics", pos_topics)
-        section("Top Negative Topics", neg_topics)
+        section("Top Positive Topics", pos_topics, 1)
+        section("Top Negative Topics", neg_topics, -1)
 
         dest = Path(out_md)
         dest.parent.mkdir(parents=True, exist_ok=True)
