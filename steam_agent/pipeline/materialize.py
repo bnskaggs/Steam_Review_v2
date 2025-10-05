@@ -11,7 +11,7 @@ import pandas as pd
 LOGGER = logging.getLogger(__name__)
 
 _REVIEW_COLUMNS = """
-review_id TEXT PRIMARY KEY,
+review_id VARCHAR PRIMARY KEY,
 app_id INTEGER,
 ts TIMESTAMP,
 lang TEXT,
@@ -24,7 +24,7 @@ embedding BLOB
 """
 
 _TOPIC_COLUMNS = """
-review_id TEXT,
+review_id VARCHAR,
 topic TEXT,
 sentiment INTEGER,
 confidence DOUBLE,
@@ -57,6 +57,12 @@ def _materialize_duckdb(url: str, reviews: pd.DataFrame, topics: pd.DataFrame) -
     _ensure_parent(db_path)
     conn = duckdb.connect(str(db_path))
     try:
+        reviews_df = reviews.copy()
+        topics_df = topics.copy()
+
+        reviews_df["review_id"] = reviews_df["review_id"].astype(str)
+        topics_df["review_id"] = topics_df["review_id"].astype(str)
+
         conn.execute(
             f"""
             CREATE TABLE IF NOT EXISTS reviews ({_REVIEW_COLUMNS});
@@ -68,25 +74,42 @@ def _materialize_duckdb(url: str, reviews: pd.DataFrame, topics: pd.DataFrame) -
             """
         )
 
-        conn.register("reviews_stage", reviews)
-        conn.execute("DELETE FROM reviews WHERE review_id IN (SELECT review_id FROM reviews_stage)")
+        conn.register("reviews_stage", reviews_df)
         conn.execute(
             """
-            INSERT INTO reviews
-            SELECT review_id, app_id, ts, lang, clean_text, helpful, funny, version_checksum, embed_model, embedding
-            FROM reviews_stage
+            MERGE INTO reviews AS t
+            USING reviews_stage AS s
+            ON t.review_id = s.review_id
+            WHEN MATCHED THEN UPDATE SET
+              app_id = s.app_id,
+              ts = s.ts,
+              lang = s.lang,
+              clean_text = s.clean_text,
+              helpful = s.helpful,
+              funny = s.funny,
+              version_checksum = s.version_checksum,
+              embed_model = s.embed_model,
+              embedding = s.embedding
+            WHEN NOT MATCHED THEN
+              INSERT (review_id, app_id, ts, lang, clean_text, helpful, funny, version_checksum, embed_model, embedding)
+              VALUES (s.review_id, s.app_id, s.ts, s.lang, s.clean_text, s.helpful, s.funny, s.version_checksum, s.embed_model, s.embedding);
             """
         )
         conn.unregister("reviews_stage")
 
-        conn.register("topics_stage", topics)
-        conn.execute(
-            "DELETE FROM review_topics WHERE review_id IN (SELECT review_id FROM topics_stage)"
-        )
+        conn.register("topics_stage", topics_df)
         conn.execute(
             """
-            INSERT INTO review_topics
-            SELECT review_id, topic, sentiment, confidence, rationale FROM topics_stage
+            MERGE INTO review_topics AS t
+            USING topics_stage AS s
+            ON t.review_id = s.review_id AND t.topic = s.topic
+            WHEN MATCHED THEN UPDATE SET
+              sentiment = s.sentiment,
+              confidence = s.confidence,
+              rationale = s.rationale
+            WHEN NOT MATCHED THEN
+              INSERT (review_id, topic, sentiment, confidence, rationale)
+              VALUES (s.review_id, s.topic, s.sentiment, s.confidence, s.rationale);
             """
         )
         conn.unregister("topics_stage")
