@@ -161,7 +161,8 @@ def run_pipeline(config: RunConfig) -> int:
     results.append(("prepare", prepare_metrics))
 
     lang_kept = float(prepare_metrics.get("pct_lang_kept", 0.0))
-    lang_counts = prepare_metrics.get("lang_counts", {})
+    lang_counts = prepare_metrics.get("lang_counts", {}) or {}
+    total_rows = int(prepare_metrics.get("rows_in") or sum(lang_counts.values()) or 0)
 
     dedupe_key = "review_id|clean_text"
 
@@ -207,28 +208,38 @@ def run_pipeline(config: RunConfig) -> int:
         return 1
 
     classify_attempt = 1
-    def _update_topic_metrics(metrics: Dict[str, object]) -> float:
+
+    def _run_classify_attempt() -> tuple[Dict[str, object], bool, dict[str, float | bool]]:
+        metrics = classify.classify(
+            config.embedded,
+            config.topics,
+            taxonomy=config.taxonomy,
+            min_conf=config.min_conf,
+        )
         blank_pct = float(metrics.get("blank_pct", 1.0))
-        overall_topic_rate = lang_kept * (1.0 - blank_pct)
-        metrics["overall_topic_rate"] = round(overall_topic_rate, 4)
+        actual_labeled = max(0.0, min(1.0, 1.0 - blank_pct))
+        metrics["actual_labeled_pct"] = round(actual_labeled, 4)
+        metrics["overall_topic_rate"] = round(lang_kept * actual_labeled, 4)
         metrics["lang_kept"] = round(lang_kept, 4)
-        return blank_pct
+        ok, info = verifiers.verify_topic_density(
+            blank_pct=blank_pct,
+            lang_counts=lang_counts,
+            supported_langs={"en"},
+            total_rows=total_rows,
+        )
+        metrics["expected_overall"] = round(info["expected_overall"], 4)
+        metrics["supported_share"] = round(info["supported_share"], 4)
+        metrics["strict_density_check"] = bool(info["strict"])
+        return metrics, ok, info
 
-    classify_metrics = classify.classify(
-        config.embedded,
-        config.topics,
-        taxonomy=config.taxonomy,
-        min_conf=config.min_conf,
-    )
-    blank_pct = _update_topic_metrics(classify_metrics)
-    blank_ok = verifiers.verify_topic_density(
-        blank_pct=blank_pct,
-        lang_kept=lang_kept,
-    )
+    classify_metrics, blank_ok, density_info = _run_classify_attempt()
     _log_step("classify", classify_metrics, classify_attempt, blank_ok)
-    results.append(("classify", classify_metrics))
 
-    if not blank_ok:
+    final_density_info = density_info
+
+    if blank_ok:
+        results.append(("classify", classify_metrics))
+    else:
         new_min_conf = max(0.35, config.min_conf - 0.05)
         if new_min_conf != config.min_conf:
             LOGGER.warning(
@@ -244,19 +255,32 @@ def run_pipeline(config: RunConfig) -> int:
             )
         config.min_conf = new_min_conf
         classify_attempt += 1
-        classify_metrics = classify.classify(
-            config.embedded,
-            config.topics,
-            taxonomy=config.taxonomy,
-            min_conf=config.min_conf,
-        )
-        blank_pct = _update_topic_metrics(classify_metrics)
-        blank_ok = verifiers.verify_topic_density(
-            blank_pct=blank_pct,
-            lang_kept=lang_kept,
-        )
-        _log_step("classify", classify_metrics, classify_attempt, blank_ok)
-        results[-1] = ("classify", classify_metrics)
+        classify_metrics, blank_ok, density_info = _run_classify_attempt()
+        final_density_info = density_info
+
+        final_ok = blank_ok
+        if not final_ok:
+            supported_share = float(density_info["supported_share"])
+            strict = bool(density_info["strict"])
+            if supported_share < 0.15 or not strict:
+                LOGGER.warning(
+                    "Topic density below expectation but tolerated (supported_share=%.2f, strict=%s)",
+                    supported_share,
+                    strict,
+                )
+                final_ok = True
+            else:
+                LOGGER.error(
+                    "Topic density verification failed (actual=%.2f, expected=%.2f, supported_share=%.2f)",
+                    density_info["actual_labeled"],
+                    density_info["expected_overall"],
+                    supported_share,
+                )
+        _log_step("classify", classify_metrics, classify_attempt, final_ok)
+        results.append(("classify", classify_metrics))
+        if not final_ok:
+            _log_summary(results)
+            return 1
 
     materialize_metrics = materialize.load(
         config.db_url,
@@ -273,7 +297,9 @@ def run_pipeline(config: RunConfig) -> int:
         config.since,
         config.until,
         lang_counts=lang_counts,
-        actual_labeled=float(classify_metrics.get("overall_topic_rate", 0.0)),
+        actual_labeled=float(final_density_info["actual_labeled"]),
+        expected_overall=float(final_density_info["expected_overall"]),
+        supported_share=float(final_density_info["supported_share"]),
         lang_kept=lang_kept,
     )
     _log_step("report", report_metrics, 1, True)

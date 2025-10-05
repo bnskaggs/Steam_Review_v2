@@ -146,6 +146,8 @@ def render(
     *,
     lang_counts: Dict[str, int] | None = None,
     actual_labeled: float | None = None,
+    expected_overall: float | None = None,
+    supported_share: float | None = None,
     lang_kept: float | None = None,
 ) -> Dict[str, object]:
     """Render a Markdown report for the review window."""
@@ -199,16 +201,21 @@ def render(
         section("Top Negative Topics", neg_topics, -1)
 
         lang_counts = lang_counts or {}
-        coverage_line = "Classifier coverage: n/a"
-        if actual_labeled is not None and lang_kept not in (None, 0):
-            included_share = actual_labeled / lang_kept if lang_kept else 0.0
-            coverage_line = (
-                f"Classifier coverage: {actual_labeled:.1%} of all reviews (~{included_share:.1%} of included languages)"
-            )
+        sorted_lang_counts = {k: lang_counts[k] for k in sorted(lang_counts)} if lang_counts else {}
 
         lines.append("---")
-        lines.append(f"Language mix this window: {lang_counts}")
-        lines.append(coverage_line)
+        lines.append(f"Language mix this window: {sorted_lang_counts}")
+        if supported_share is not None:
+            lines.append(f"Supported-language share: {supported_share:.1%}")
+
+        if actual_labeled is not None and expected_overall is not None and supported_share is not None:
+            lines.append(
+                "Coverage: "
+                f"{actual_labeled:.1%} overall (expected ~{expected_overall:.1%} based on "
+                f"{supported_share:.1%} supported-language share)."
+            )
+        elif actual_labeled is not None:
+            lines.append(f"Coverage: {actual_labeled:.1%} overall")
 
         dest = Path(out_md)
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -222,6 +229,8 @@ def render(
         "total_reviews": total_reviews,
         "lang_counts": lang_counts,
         "actual_labeled": actual_labeled,
+        "expected_overall": expected_overall,
+        "supported_share": supported_share,
         "lang_kept": lang_kept,
     }
     LOGGER.info("Report rendered: %s", metrics)
