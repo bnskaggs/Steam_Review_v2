@@ -1,6 +1,101 @@
 topics:
-  combat: ["parry","combo","inputs","netcode","lag","rollback"]
-  difficulty: ["easy","hard","unfair","grind","balance"]
-  progression: ["unlock","gear","skill tree","battle pass"]
-  performance: ["fps","stutter","crash","freeze","load time"]
-  monetization: ["dlc","price","microtransaction","cosmetic","paywall"]
+  # === UNIVERSAL CORE ===
+  performance: [
+    "fps","frame rate","stutter","lag","latency","crash","bug","freeze",
+    "optimization","patch","update","loading","load time","performance"
+  ]
+
+  controls: [
+    "control","input","responsiveness","delay","controller","keyboard","mapping",
+    "rebind","vibration","deadzone","camera","sensitivity"
+  ]
+
+  graphics_audio: [
+    "graphics","visuals","animation","art style","lighting","texture","model",
+    "soundtrack","music","voice acting","sound design","effects"
+  ]
+
+  gameplay_balance: [
+    "gameplay","fun","boring","grind","repetitive","pacing","balance","mechanic",
+    "depth","polish","challenge","difficulty curve"
+  ]
+
+  progression: [
+    "unlock","reward","progression","level","xp","gear","upgrade","loot",
+    "currency","battle pass","skill tree","rank","trophy"
+  ]
+
+  monetization: [
+    "price","dlc","cosmetic","microtransaction","mtx","shop","store","paywall",
+    "battle pass","free","premium","expensive","cash grab","value"
+  ]
+
+  story_narrative: [
+    "story","plot","character","dialogue","writing","campaign","cutscene","lore",
+    "ending","narrative"
+  ]
+
+  community_online: [
+    "matchmaking","server","queue","population","toxic","community","lobby",
+    "ping","disconnect","co-op","crossplay","online"
+  ]
+
+  ui_ux: [
+    "menu","interface","hud","cursor","navigation","tutorial","settings",
+    "accessibility","onboarding"
+  ]
+
+  # === FIGHTING-GAME MODULE ===
+  combat: [
+    "combo","cancel","parry","punish","block","guard","grab","throw","counter",
+    "hitbox","frame","juggle","meter","super","special","move","attack"
+  ]
+
+  difficulty: [
+    "easy","hard","difficulty","execution","skill","learning","practice",
+    "training","inputs","timing","gap","unfair","grind","balance"
+  ]
+
+  netcode_online: [
+    "rollback","delay","connection","ping","lag","match","online","region",
+    "desync","spectator","netcode"
+  ]
+
+  roster_characters: [
+    "character","roster","costume","skin","favorite","main","dlc character",
+    "variant","fighter"
+  ]
+
+  training_lab: [
+    "training","lab","tutorial","dummy","move list","record","playback",
+    "frame data","setup","trial"
+  ]
+
+  ranked_competitive: [
+    "ranked","ladder","elo","tournament","match point","win streak",
+    "leaderboard","ranking","competition"
+  ]
+
+  meta_balance: [
+    "meta","patch","update","balance","nerf","buff","tier list","matchup",
+    "rework"
+  ]
+
+  presentation_aesthetic: [
+    "animation","art","camera angle","stage","arena","environment","music",
+    "announcer","visuals"
+  ]
+
+  accessibility_onboarding: [
+    "tutorial","onboarding","beginner","newcomer","assist","accessibility",
+    "input leniency","auto combo"
+  ]
+
+  community_competition: [
+    "discord","tournament","event","scene","player base","casual","locals",
+    "community","online scene"
+  ]
+
+  # === FLEX SPACE ===
+  other_positive: []
+  other_negative: []
