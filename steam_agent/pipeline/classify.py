@@ -9,8 +9,39 @@ from typing import Dict, Iterable, List, Sequence, Tuple
 
 import pandas as pd
 import yaml
+import nltk
+from nltk.stem import WordNetLemmatizer
 
 LOGGER = logging.getLogger(__name__)
+
+try:
+    nltk.data.find("corpora/wordnet")
+except LookupError:
+    try:
+        nltk.download("wordnet")
+    except Exception as exc:  # pragma: no cover - best effort download
+        LOGGER.debug("Unable to download wordnet corpus: %s", exc)
+
+try:
+    nltk.data.find("corpora/omw-1.4")
+except LookupError:
+    try:
+        nltk.download("omw-1.4")
+    except Exception as exc:  # pragma: no cover - best effort download
+        LOGGER.debug("Unable to download omw-1.4 corpus: %s", exc)
+
+_lemm = WordNetLemmatizer()
+
+
+def normalize_text(txt: str) -> str:
+    txt = txt.lower()
+    tokens = re.findall(r"\b\w+\b", txt)
+    lemmas = []
+    for token in tokens:
+        lemma = _lemm.lemmatize(token)
+        lemma = _lemm.lemmatize(lemma, "v")
+        lemmas.append(lemma)
+    return " ".join(lemmas)
 
 _TOPIC_PRIORITY: Tuple[str, ...] = (
     "monetization",
@@ -268,13 +299,33 @@ def classify(
 
     for _, row in df.iterrows():
         review_id = row.get("review_id")
-        text = row.get("clean_text", "") or ""
-        sentences = _split_sentences(str(text))
+        review_text = str(row.get("clean_text", "") or "")
+        text = normalize_text(review_text)
+
+        matched_topics: set[str] = set()
+        for topic, words in taxonomy_map.items():
+            for w in words:
+                pattern = rf"\b{re.escape(w.lower())}(?:s|ed|ing)?\b"
+                if re.search(pattern, text, re.IGNORECASE):
+                    matched_topics.add(topic)
+                    break
+
+        rid = review_id
+        logging.debug(f"Matched topics={matched_topics} for review_id={rid}")
+
+        sentences = _split_sentences(review_text)
         for sentence in sentences:
-            lower_sentence = sentence.lower()
+            normalized_sentence = normalize_text(sentence)
             topic_hits_map: Dict[str, int] = {}
-            for topic, patterns in pattern_map.items():
-                hits = _sentence_hits(lower_sentence, patterns)
+            if matched_topics:
+                candidate_topics = [topic for topic in pattern_map.keys() if topic in matched_topics]
+            else:
+                candidate_topics = pattern_map.keys()
+            for topic in candidate_topics:
+                patterns = pattern_map.get(topic, [])
+                if not patterns:
+                    continue
+                hits = _sentence_hits(normalized_sentence, patterns)
                 if hits:
                     topic_hits_map[topic] = hits
             if not topic_hits_map:
