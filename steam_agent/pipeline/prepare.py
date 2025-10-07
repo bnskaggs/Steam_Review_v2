@@ -202,8 +202,8 @@ def prepare(
                 "helpful",
                 "funny",
                 "version_checksum",
-            ]]
-            cleaned["embed_model"] = "none"
+            ]].copy()
+            cleaned.loc[:, "embed_model"] = "none"
             lang_counts_kept = Counter(filtered["lang"])
 
     pct_kept = float(rows_out / rows_in) if rows_in else 0.0
