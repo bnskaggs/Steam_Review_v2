@@ -125,6 +125,8 @@ def prepare(
     rows_in = int(df.shape[0])
 
     lang_counts: Dict[str, int] = {}
+    lang_counts_raw: Counter[str] = Counter()
+    lang_counts_kept: Counter[str] = Counter()
     if rows_in == 0:
         cleaned = pd.DataFrame(
             columns=[
@@ -148,7 +150,9 @@ def prepare(
             normalized_text = "" if (not isinstance(text, str) and pd.isna(text)) else str(text)
             detected_langs.append(infer_language(normalized_text, hint))
         df["lang"] = detected_langs
-        lang_counts = {key: int(value) for key, value in Counter(detected_langs).items()}
+        raw_counter = Counter(detected_langs)
+        lang_counts_raw = Counter(raw_counter)
+        lang_counts = {key: int(value) for key, value in raw_counter.items()}
 
         whitelist: Optional[set[str]]
         if langs is None:
@@ -177,6 +181,7 @@ def prepare(
                     "embed_model",
                 ]
             )
+            lang_counts_kept = Counter()
         else:
             filtered["ts"] = filtered["timestamp_created"].apply(lambda x: _parse_timestamp(str(x)))
             filtered["clean_text"] = filtered["review"].apply(_clean_text)
@@ -199,6 +204,7 @@ def prepare(
                 "version_checksum",
             ]]
             cleaned["embed_model"] = "none"
+            lang_counts_kept = Counter(filtered["lang"])
 
     pct_kept = float(rows_out / rows_in) if rows_in else 0.0
 
@@ -209,8 +215,12 @@ def prepare(
     metrics = {
         "rows_in": rows_in,
         "rows_out": rows_out,
+        "rows_in_raw": rows_in,
+        "rows_in_kept": rows_out,
         "pct_lang_kept": round(pct_kept, 4),
         "lang_counts": lang_counts,
+        "lang_counts_raw": lang_counts_raw,
+        "lang_counts_kept": lang_counts_kept,
     }
     LOGGER.info("Prepare complete: %s", metrics)
     return metrics

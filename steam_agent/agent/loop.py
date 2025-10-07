@@ -161,8 +161,10 @@ def run_pipeline(config: RunConfig) -> int:
     results.append(("prepare", prepare_metrics))
 
     lang_kept = float(prepare_metrics.get("pct_lang_kept", 0.0))
-    lang_counts = prepare_metrics.get("lang_counts", {}) or {}
-    total_rows = int(prepare_metrics.get("rows_in") or sum(lang_counts.values()) or 0)
+    lang_counts_kept = prepare_metrics.get("lang_counts_kept") or {}
+    if not isinstance(lang_counts_kept, dict):
+        lang_counts_kept = dict(lang_counts_kept)
+    total_rows_kept = int(prepare_metrics.get("rows_in_kept") or sum(lang_counts_kept.values()) or 0)
 
     dedupe_key = "review_id|clean_text"
 
@@ -223,9 +225,9 @@ def run_pipeline(config: RunConfig) -> int:
         metrics["lang_kept"] = round(lang_kept, 4)
         ok, info = verifiers.verify_topic_density(
             blank_pct=blank_pct,
-            lang_counts=lang_counts,
+            lang_counts=lang_counts_kept,
             supported_langs={"en"},
-            total_rows=total_rows,
+            total_rows=total_rows_kept,
         )
         metrics["expected_overall"] = round(info["expected_overall"], 4)
         metrics["supported_share"] = round(info["supported_share"], 4)
@@ -296,7 +298,7 @@ def run_pipeline(config: RunConfig) -> int:
         config.report,
         config.since,
         config.until,
-        lang_counts=lang_counts,
+        lang_counts=lang_counts_kept,
         actual_labeled=float(final_density_info["actual_labeled"]),
         expected_overall=float(final_density_info["expected_overall"]),
         supported_share=float(final_density_info["supported_share"]),
