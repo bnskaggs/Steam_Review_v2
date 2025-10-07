@@ -200,11 +200,23 @@ def render(
         section("Top Positive Topics", pos_topics, 1)
         section("Top Negative Topics", neg_topics, -1)
 
-        lang_counts = lang_counts or {}
-        sorted_lang_counts = {k: lang_counts[k] for k in sorted(lang_counts)} if lang_counts else {}
+        lang_counts_kept = dict(lang_counts or {})
+        sorted_lang_counts_kept = (
+            {k: lang_counts_kept[k] for k in sorted(lang_counts_kept)} if lang_counts_kept else {}
+        )
+
+        supported_share_calc: float | None = None
+        if lang_counts_kept:
+            total_lang_rows = sum(lang_counts_kept.values())
+            if total_lang_rows > 0:
+                supported_langs = {"en"}
+                supported_rows = sum(lang_counts_kept.get(lang, 0) for lang in supported_langs)
+                supported_share_calc = supported_rows / total_lang_rows
+
+        supported_share = supported_share_calc
 
         lines.append("---")
-        lines.append(f"Language mix this window: {sorted_lang_counts}")
+        lines.append(f"Language mix this window: {sorted_lang_counts_kept}")
         if supported_share is not None:
             lines.append(f"Supported-language share: {supported_share:.1%}")
 
@@ -227,7 +239,8 @@ def render(
         "path": str(out_md),
         "top_topics": [topic for topic, _ in (pos_topics + neg_topics)],
         "total_reviews": total_reviews,
-        "lang_counts": lang_counts,
+        "lang_counts": lang_counts_kept,
+        "lang_counts_kept": lang_counts_kept,
         "actual_labeled": actual_labeled,
         "expected_overall": expected_overall,
         "supported_share": supported_share,
